@@ -173,11 +173,9 @@ async function render() {
     const weekIqamah = {};
     Object.keys(weekEarliestAthan).forEach(weekNum => {
       const offset = Math.max(prayerOffsets[prayer] ?? defaultOffsets[prayer], 10); // Enforce minimum 10 min
-      let iqamahMins = roundToNearest(weekEarliestAthan[weekNum] + offset, 5);
-      // Ensure Iqamah is at least offset after Athan (even after rounding)
-      if (iqamahMins < weekEarliestAthan[weekNum] + offset) {
-        iqamahMins = roundToNearest(weekEarliestAthan[weekNum] + offset, 5);
-      }
+      // Always round UP to the next 5-min mark after (Athan + offset)
+      let base = weekEarliestAthan[weekNum] + offset;
+      let iqamahMins = base % 5 === 0 ? base : base + (5 - (base % 5));
       weekIqamah[weekNum] = !isNaN(iqamahMins) ? formatTime(iqamahMins, true) : '';
     });
     iqamahTimesByPrayer[prayer] = timings.map((t, idx) => {
