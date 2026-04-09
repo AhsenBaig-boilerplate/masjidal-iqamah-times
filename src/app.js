@@ -173,7 +173,11 @@ async function render() {
     const weekIqamah = {};
     Object.keys(weekEarliestAthan).forEach(weekNum => {
       const offset = Math.max(prayerOffsets[prayer] ?? defaultOffsets[prayer], 10); // Enforce minimum 10 min
-      const iqamahMins = roundToNearest(weekEarliestAthan[weekNum] + offset, 5);
+      let iqamahMins = roundToNearest(weekEarliestAthan[weekNum] + offset, 5);
+      // Ensure Iqamah is at least offset after Athan (even after rounding)
+      if (iqamahMins < weekEarliestAthan[weekNum] + offset) {
+        iqamahMins = roundToNearest(weekEarliestAthan[weekNum] + offset, 5);
+      }
       weekIqamah[weekNum] = !isNaN(iqamahMins) ? formatTime(iqamahMins, true) : '';
     });
     iqamahTimesByPrayer[prayer] = timings.map((t, idx) => {
@@ -239,12 +243,13 @@ async function render() {
       // Offset column (always present, never merged)
       let athanMins = parseTime(athanTime);
       let iqamahMins = parseTime(iqamahTimesByPrayer[prayer][rowIdx]);
-      let offsetVal = (!isNaN(athanMins) && !isNaN(iqamahMins) && athanTime && iqamahTimesByPrayer[prayer][rowIdx]) ? (iqamahMins - athanMins) : "";
-      // Only show offset if valid, positive, and at least 10 min
-      if (offsetVal !== "" && offsetVal >= 10) {
-        html += `<td>+${offsetVal} min</td>`;
+      let offsetVal = (!isNaN(athanMins) && !isNaN(iqamahMins) && athanTime && iqamahTimesByPrayer[prayer][rowIdx]) ? (iqamahMins - athanMins) : null;
+      if (offsetVal === null) {
+        html += `<td style='color:#b00;font-weight:bold'>N/A</td>`;
+      } else if (offsetVal < 10) {
+        html += `<td style='color:#b00;font-weight:bold'>${offsetVal >= 0 ? '+' : ''}${offsetVal} min ⚠️</td>`;
       } else {
-        html += `<td></td>`;
+        html += `<td>+${offsetVal} min</td>`;
       }
       // After Fajr, insert Sunrise column
       if (i === 0) html += `<td>${t["Sunrise"] || ""}</td>`;
