@@ -2,7 +2,8 @@
 // Support both 'Dhuhr' and 'Zuhr' as synonyms
 const prayers = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
 const csvPrayerMap = { Fajr: ["Fajr"], Dhuhr: ["Dhuhr", "Zuhr"], Asr: ["Asr"], Maghrib: ["Maghrib"], Isha: ["Isha"] };
-const defaultOffsets = { Fajr: 15, Dhuhr: 10, Asr: 10, Maghrib: 5, Isha: 10 };
+// User: Fajr +20, Dhuhr 1:30 PM (fixed), rest +10
+const defaultOffsets = { Fajr: 20, Dhuhr: 0, Asr: 10, Maghrib: 10, Isha: 10 };
 const offsetOptions = {
   Fajr: [5, 10, 15, 20, 25, 30],
   Dhuhr: [5, 10, 15, 20, 25, 30],
@@ -12,6 +13,17 @@ const offsetOptions = {
 };
 
 // Store static overrides for Iqamah times (per day/prayer)
+// User-adjustable column order for prayer blocks
+const columnOrderOptions = [
+  { label: 'Athan | Offset | Raw Offset Time | Iqama', value: 'athan-offset-raw-iqama', order: ['Athan', 'Offset', 'Raw', 'Iqama'] },
+  { label: 'Athan | Raw Offset Time | Offset | Iqama', value: 'athan-raw-offset-iqama', order: ['Athan', 'Raw', 'Offset', 'Iqama'] },
+  { label: 'Athan | Iqama | Offset | Raw Offset Time', value: 'athan-iqama-offset-raw', order: ['Athan', 'Iqama', 'Offset', 'Raw'] },
+  { label: 'Athan | Iqama | Raw Offset Time | Offset', value: 'athan-iqama-raw-offset', order: ['Athan', 'Iqama', 'Raw', 'Offset'] },
+];
+let selectedColumnOrder = localStorage.getItem('selectedColumnOrder') || 'athan-offset-raw-iqama';
+// User-adjustable tolerances (in minutes) for offset rounding
+let offsetToleranceNeg = Number(localStorage.getItem("offsetToleranceNeg") || 2); // for rounding down
+let offsetTolerancePos = Number(localStorage.getItem("offsetTolerancePos") || 3); // for rounding up
 let staticIqamahOverrides = JSON.parse(localStorage.getItem("staticIqamahOverrides") || "null") || {};
 
 function roundToNearest(minutes, interval) {
@@ -36,14 +48,16 @@ function parseTime(str) {
 
 
 
-async function render() {
-  const timings = await fetchAthanMonth();
-  // If no timings, prompt for upload
-  const app = document.getElementById("app");
-  app.innerHTML = `<h2>Athan & Iqamah Timings Adjuster</h2>`;
 
-  // CSV upload (always visible)
+function createCSVUpload(app, onUpload) {
+  // Remove any existing upload UI (remove ALL, not just first)
+  while (true) {
+    const oldUpload = app.querySelector('.csv-upload-ui');
+    if (!oldUpload) break;
+    oldUpload.remove();
+  }
   const uploadDiv = document.createElement("div");
+  uploadDiv.className = 'csv-upload-ui';
   uploadDiv.innerHTML = `<b>Upload CSV Timetable:</b> <input type="file" id="csvfile" accept=".csv">`;
   app.appendChild(uploadDiv);
   uploadDiv.querySelector("#csvfile").addEventListener("change", e => {
@@ -51,22 +65,13 @@ async function render() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = evt => {
-      localStorage.setItem("uploadedCSV", evt.target.result);
-      csvData = parseCSV(evt.target.result);
-      render();
+      onUpload(evt.target.result);
     };
     reader.readAsText(file);
   });
+}
 
-  if (!timings.length) {
-    app.innerHTML += `<p style='color:red'>No timings loaded. Please upload a CSV file.</p>`;
-    return;
-  }
-
-
-
-  // Week start selector
-  let weekStart = localStorage.getItem("iqamahWeekStart") || "Sunday";
+function createWeekStartSelector(app, weekStart, onChange) {
   const weekStartOptions = ["Sunday", "Monday", "Saturday"];
   const weekStartDiv = document.createElement("div");
   weekStartDiv.innerHTML = `<b>Week starts on:</b> `;
@@ -79,14 +84,242 @@ async function render() {
     weekStartSel.appendChild(o);
   });
   weekStartSel.addEventListener("change", e => {
-    localStorage.setItem("iqamahWeekStart", e.target.value);
-    render();
+    onChange(e.target.value);
   });
   weekStartDiv.appendChild(weekStartSel);
   app.appendChild(weekStartDiv);
+}
 
-  // Per-prayer offset storage (single offset per prayer)
-  let prayerOffsets = JSON.parse(localStorage.getItem("iqamahPrayerOffsets") || "null") || {};
+function createOffsetControls(app, prayers, prayerOffsets, staticIqamahOverrides, onOffsetChange, onFixedChange) {
+  const offsetControls = document.createElement("div");
+  offsetControls.innerHTML = `<b>Set Iqamah Offsets:</b>`;
+  const offsetTable = document.createElement("table");
+  offsetTable.style.margin = '10px 0 20px 0';
+  offsetTable.style.borderCollapse = 'collapse';
+  offsetTable.style.width = 'auto';
+  offsetTable.innerHTML = `<tr>
+    <th style='padding:4px 12px;'>Prayer</th>
+    <th style='padding:4px 12px;'>Offset</th>
+    <th style='padding:4px 12px;'>or Fixed Time</th>
+  </tr>`;
+  prayers.forEach(prayer => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td style='padding:4px 12px; font-weight:bold;'>${prayer}</td>`;
+    // Toggle for Offset/Fixed Time
+    const tdOffset = document.createElement('td');
+    const toggleWrapper = document.createElement('div');
+    toggleWrapper.style.display = 'flex';
+    toggleWrapper.style.alignItems = 'center';
+    const toggle = document.createElement('button');
+    toggle.textContent = staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["useFixed"] ? 'Fixed Time' : 'Offset';
+    toggle.style.marginRight = '8px';
+    toggle.style.width = '80px';
+    toggle.style.height = '28px';
+    toggle.style.fontWeight = 'bold';
+    toggle.addEventListener('click', () => {
+      if (!staticIqamahOverrides[prayer]) staticIqamahOverrides[prayer] = {};
+      staticIqamahOverrides[prayer]["useFixed"] = !staticIqamahOverrides[prayer]["useFixed"];
+      localStorage.setItem("staticIqamahOverrides", JSON.stringify(staticIqamahOverrides));
+      render();
+    });
+    toggleWrapper.appendChild(toggle);
+    // Offset stepper
+    const offsetWrapper = document.createElement('div');
+    offsetWrapper.style.display = staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["useFixed"] ? 'none' : 'flex';
+    offsetWrapper.style.alignItems = 'center';
+    const minusBtn = document.createElement('button');
+    minusBtn.textContent = '-';
+    minusBtn.style.width = '28px';
+    minusBtn.style.height = '28px';
+    minusBtn.style.fontSize = '18px';
+    minusBtn.style.marginRight = '4px';
+    const plusBtn = document.createElement('button');
+    plusBtn.textContent = '+';
+    plusBtn.style.width = '28px';
+    plusBtn.style.height = '28px';
+    plusBtn.style.fontSize = '18px';
+    plusBtn.style.marginLeft = '4px';
+    const offsetInput = document.createElement('input');
+    offsetInput.type = 'number';
+    offsetInput.min = 0;
+    offsetInput.max = 60;
+    offsetInput.step = 5;
+    offsetInput.value = (prayerOffsets[prayer] ?? defaultOffsets[prayer]);
+    offsetInput.style.width = '48px';
+    offsetInput.style.textAlign = 'center';
+    offsetInput.addEventListener('change', e => {
+      let val = Math.max(0, Math.min(60, Math.round(Number(offsetInput.value) / 5) * 5));
+      offsetInput.value = val;
+      onOffsetChange(prayer, val);
+    });
+    minusBtn.addEventListener('click', () => {
+      let val = Math.max(0, Math.min(60, Math.round(Number(offsetInput.value) / 5) * 5 - 5));
+      offsetInput.value = val;
+      onOffsetChange(prayer, val);
+    });
+    plusBtn.addEventListener('click', () => {
+      let val = Math.max(0, Math.min(60, Math.round(Number(offsetInput.value) / 5) * 5 + 5));
+      offsetInput.value = val;
+      onOffsetChange(prayer, val);
+    });
+    offsetWrapper.appendChild(minusBtn);
+    offsetWrapper.appendChild(offsetInput);
+    offsetWrapper.appendChild(plusBtn);
+    toggleWrapper.appendChild(offsetWrapper);
+    // Fixed time UI
+    const fixedWrapper = document.createElement('div');
+    fixedWrapper.style.display = staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["useFixed"] ? 'flex' : 'none';
+    fixedWrapper.style.alignItems = 'center';
+    const timeInput = document.createElement('input');
+    timeInput.type = 'time';
+    timeInput.step = 300; // 5 min
+    timeInput.style.width = '80px';
+    // Default fixed time: Fajr 5:00 AM, Dhuhr 1:30 PM, rest 5:00 PM
+    let defaultFixed = "5:00 PM";
+    if (prayer === "Fajr") defaultFixed = "5:00 AM";
+    if (prayer === "Dhuhr") defaultFixed = "1:30 PM";
+    let curVal = staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["all"] ? staticIqamahOverrides[prayer]["all"] : defaultFixed;
+    let [curTime, curPeriod] = curVal.split(' ');
+    if (!curTime) {
+      if (prayer === "Fajr") curTime = "05:00";
+      else if (prayer === "Dhuhr") curTime = "13:30";
+      else curTime = "17:00";
+    }
+    // Always default to AM/PM for all prayers
+    if (!curPeriod) {
+      if (prayer === "Fajr") curPeriod = "AM";
+      else curPeriod = "PM";
+    }
+    let [h, m] = curTime.split(':');
+    let hour = Number(h);
+    let minute = Number(m);
+    if (curPeriod && curPeriod.toUpperCase() === "PM" && hour < 12) hour += 12;
+    if (curPeriod && curPeriod.toUpperCase() === "AM" && hour === 12) hour = 0;
+    timeInput.value = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+    const ampmBtn = document.createElement('button');
+    ampmBtn.textContent = curPeriod;
+    ampmBtn.style.marginLeft = '6px';
+    ampmBtn.style.width = '40px';
+    ampmBtn.style.height = '28px';
+    ampmBtn.style.fontWeight = 'bold';
+    ampmBtn.addEventListener('click', () => {
+      ampmBtn.textContent = ampmBtn.textContent === 'AM' ? 'PM' : 'AM';
+      updateFixed();
+    });
+    function updateFixed() {
+      let [h, m] = timeInput.value.split(':');
+      let hour = Number(h);
+      let minute = Number(m);
+      let period = ampmBtn.textContent;
+      let displayHour = hour;
+      if (period === 'PM' && hour > 12) displayHour = hour - 12;
+      if (period === 'AM' && hour === 0) displayHour = 12;
+      if (period === 'PM' && hour === 0) displayHour = 12;
+      if (period === 'AM' && hour > 12) displayHour = hour - 12;
+      let val = `${displayHour}:${m} ${period}`;
+      onFixedChange(prayer, val);
+    }
+    timeInput.addEventListener('change', updateFixed);
+    fixedWrapper.appendChild(timeInput);
+    fixedWrapper.appendChild(ampmBtn);
+    toggleWrapper.appendChild(fixedWrapper);
+    tdOffset.appendChild(toggleWrapper);
+    tr.appendChild(tdOffset);
+    offsetTable.appendChild(tr);
+  });
+  offsetControls.appendChild(offsetTable);
+  app.appendChild(offsetControls);
+}
+
+async function render() {
+  const app = document.getElementById("app");
+  if (!app) return;
+  try {
+    app.innerHTML = `<h2>Athan & Iqamah Timings Adjuster</h2>`;
+    // Column order UI (move to top, clearer label)
+    const colOrderDiv = document.createElement('div');
+    colOrderDiv.style.margin = '16px 0 8px 0';
+    colOrderDiv.innerHTML = `<label for="colOrderSel"><b>Prayer columns order (all blocks):</b></label> <select id="colOrderSel">${columnOrderOptions.map(opt => `<option value="${opt.value}"${selectedColumnOrder === opt.value ? ' selected' : ''}>${opt.label}</option>`).join('')}</select>`;
+    // Try to insert after the heading, else append
+    const h2 = app.querySelector('h2');
+    if (h2 && h2.nextSibling) {
+      app.insertBefore(colOrderDiv, h2.nextSibling);
+    } else {
+      app.appendChild(colOrderDiv);
+    }
+    const colOrderSel = colOrderDiv.querySelector('#colOrderSel');
+    if (colOrderSel) {
+      colOrderSel.addEventListener('change', e => {
+        selectedColumnOrder = e.target.value;
+        localStorage.setItem('selectedColumnOrder', selectedColumnOrder);
+        render();
+      });
+    }
+    // Offset tolerance control UI (separate for negative and positive)
+    const toleranceDiv = document.createElement("div");
+    toleranceDiv.style.margin = "8px 0";
+    toleranceDiv.innerHTML = `
+      <b>Offset rounding tolerance:</b>
+      <span style="margin-left:8px;">- (down):</span>
+      <input type="number" id="offsetToleranceNegInput" min="0" max="10" step="1" value="${offsetToleranceNeg}" style="width:40px; text-align:center;">
+      <span style="margin-left:8px;">+ (up):</span>
+      <input type="number" id="offsetTolerancePosInput" min="0" max="10" step="1" value="${offsetTolerancePos}" style="width:40px; text-align:center;">
+      <span style="color:#888; margin-left:8px;">(down: how close to round down, up: how close to round up)</span>
+    `;
+    app.appendChild(toleranceDiv);
+    const tolNegInput = toleranceDiv.querySelector("#offsetToleranceNegInput");
+    const tolPosInput = toleranceDiv.querySelector("#offsetTolerancePosInput");
+    if (tolNegInput) {
+      tolNegInput.addEventListener("change", e => {
+        offsetToleranceNeg = Math.max(0, Math.min(10, Number(e.target.value)));
+        localStorage.setItem("offsetToleranceNeg", offsetToleranceNeg);
+        render();
+      });
+    }
+    if (tolPosInput) {
+      tolPosInput.addEventListener("change", e => {
+        offsetTolerancePos = Math.max(0, Math.min(10, Number(e.target.value)));
+        localStorage.setItem("offsetTolerancePos", offsetTolerancePos);
+        render();
+      });
+    }
+    const timings = await fetchAthanMonth();
+
+
+    createCSVUpload(app, (csv) => {
+      localStorage.setItem("uploadedCSV", csv);
+      csvData = parseCSV(csv);
+      render();
+    });
+
+    if (!timings || !Array.isArray(timings) || !timings.length) {
+      app.innerHTML += `<p style='color:red'>No timings loaded. Please upload a CSV file.</p>`;
+      return;
+    }
+
+    let weekStart = localStorage.getItem("iqamahWeekStart") || "Sunday";
+    createWeekStartSelector(app, weekStart, (val) => {
+      localStorage.setItem("iqamahWeekStart", val);
+      render();
+    });
+
+    let prayerOffsets = JSON.parse(localStorage.getItem("iqamahPrayerOffsets") || "null") || {};
+    createOffsetControls(app, prayers, prayerOffsets, staticIqamahOverrides,
+      (prayer, value) => {
+        prayerOffsets[prayer] = value;
+        localStorage.setItem("iqamahPrayerOffsets", JSON.stringify(prayerOffsets));
+        render();
+      },
+      (prayer, value) => {
+        if (!staticIqamahOverrides[prayer]) staticIqamahOverrides[prayer] = {};
+        staticIqamahOverrides[prayer]["all"] = value;
+        localStorage.setItem("staticIqamahOverrides", JSON.stringify(staticIqamahOverrides));
+        render();
+      }
+    );
+
+
+
 
   // Helper to get week number for a date
   function getWeekNum(dateStr) {
@@ -102,67 +335,56 @@ async function render() {
     return weekNum;
   }
 
-  // Improved UI: Render per-prayer offset controls in a table for better alignment
-  const offsetControls = document.createElement("div");
-  offsetControls.innerHTML = `<b>Set Iqamah Offsets:</b>`;
-  const offsetTable = document.createElement("table");
-  offsetTable.style.margin = '10px 0 20px 0';
-  offsetTable.style.borderCollapse = 'collapse';
-  offsetTable.style.width = 'auto';
-  offsetTable.innerHTML = `<tr>
-    <th style='padding:4px 12px;'>Prayer</th>
-    <th style='padding:4px 12px;'>Offset</th>
-    <th style='padding:4px 12px;'>or Fixed Time</th>
-  </tr>`;
-  prayers.forEach(prayer => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td style='padding:4px 12px; font-weight:bold;'>${prayer}</td>`;
-    const tdOffset = document.createElement('td');
-    const sel = document.createElement("select");
-    sel.dataset.prayer = prayer;
-    offsetOptions[prayer].forEach(opt => {
-      const o = document.createElement("option");
-      o.value = opt;
-      o.textContent = `+${opt} min`;
-      if ((prayerOffsets[prayer] ?? defaultOffsets[prayer]) === opt) o.selected = true;
-      sel.appendChild(o);
-    });
-    sel.addEventListener("change", e => {
-      prayerOffsets[prayer] = Number(e.target.value);
-      localStorage.setItem("iqamahPrayerOffsets", JSON.stringify(prayerOffsets));
+  // Debug info toggle
+    let showIqamahDebug = localStorage.getItem('showIqamahDebug') === 'true';
+    const debugToggleDiv = document.createElement('div');
+    debugToggleDiv.style.margin = '10px 0 0 0';
+    const debugToggle = document.createElement('input');
+    debugToggle.type = 'checkbox';
+    debugToggle.id = 'toggleIqamahDebug';
+    debugToggle.checked = showIqamahDebug;
+    debugToggle.addEventListener('change', e => {
+      localStorage.setItem('showIqamahDebug', debugToggle.checked);
       render();
     });
-    tdOffset.appendChild(sel);
-    tr.appendChild(tdOffset);
-    // Static time override input
-    const tdFixed = document.createElement('td');
-    const timeInput = document.createElement("input");
-    timeInput.type = "text";
-    timeInput.placeholder = "e.g. 1:30 PM";
-    timeInput.style.width = "100px";
-    timeInput.value = (staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["all"] ? staticIqamahOverrides[prayer]["all"] : "");
-    timeInput.addEventListener("change", e => {
-      if (!staticIqamahOverrides[prayer]) staticIqamahOverrides[prayer] = {};
-      staticIqamahOverrides[prayer]["all"] = e.target.value.trim();
-      localStorage.setItem("staticIqamahOverrides", JSON.stringify(staticIqamahOverrides));
-      render();
-    });
-    tdFixed.appendChild(timeInput);
-    tr.appendChild(tdFixed);
-    offsetTable.appendChild(tr);
-  });
-  offsetControls.appendChild(offsetTable);
-  app.appendChild(offsetControls);
+    debugToggleDiv.appendChild(debugToggle);
+    const debugLabel = document.createElement('label');
+    debugLabel.htmlFor = 'toggleIqamahDebug';
+    debugLabel.textContent = ' Show Iqamah debug info (avg, offset, mins)';
+    debugToggleDiv.appendChild(debugLabel);
+    app.appendChild(debugToggleDiv);
 
   // Table for the whole month with grouped headers and merged Iqamah cells
-  const table = document.createElement("table");
-  table.className = "table";
+    const table = document.createElement("table");
+    table.className = "table";
   // Header row 1: Add an Offset column after each Iqamah
-  let header1 = `<tr><th rowspan='2'>Month</th><th rowspan='2'>Date</th><th rowspan='2'>Day</th><th colspan='3'>Fajr</th><th rowspan='2'>Sunrise</th><th colspan='3'>Dhuhr</th><th colspan='3'>Asr</th><th colspan='3'>Maghrib</th><th colspan='3'>Isha</th></tr>`;
-  // Header row 2: Athan/Iqamah/Offset for each prayer (no cell for Sunrise)
+  let header1 = `<tr>
+    <th rowspan='2'>Month</th>
+    <th rowspan='2'>Date</th>
+    <th rowspan='2'>Day</th>
+    <th colspan='4' style='border-left:2px solid #888;border-right:2px solid #888;'>Fajr</th>
+    <th rowspan='2' style='background:#f8f8f8;border-right:2px solid #888;'>Sunrise</th>
+    <th colspan='4' style='border-right:2px solid #888;'>Dhuhr</th>
+    <th colspan='4' style='border-right:2px solid #888;'>Asr</th>
+    <th colspan='4' style='border-right:2px solid #888;'>Maghrib</th>
+    <th colspan='4' style='border-right:2px solid #888;'>Isha</th>
+  </tr>`;
   let header2 = `<tr>`;
+  const colOrder = columnOrderOptions.find(opt => opt.value === selectedColumnOrder)?.order || ['Athan', 'Offset', 'Raw', 'Iqama'];
   for (let i = 0; i < prayers.length; ++i) {
-    header2 += `<th>Athan</th><th class='iqamah-col'>Iqamah</th><th>Offset</th>`;
+    colOrder.forEach((col, j) => {
+      let thStyle = '';
+      if (i === 0 && j === 0) thStyle += 'border-left:2px solid #888;';
+      // Add thick right border only to the last column of the last prayer block
+      if (i === prayers.length - 1 && j === colOrder.length - 1) {
+        thStyle += 'border-right:2px solid #888;';
+      } else {
+        thStyle += 'border-right:1px solid #ccc;';
+      }
+      let thClass = col === 'Iqama' ? ' class="iqamah-col"' : '';
+      let label = col === 'Raw' ? 'Raw Offset Time' : col;
+      header2 += `<th${thClass} style='${thStyle}'>${label}</th>`;
+    });
     if (i === 0) header2 += ``; // After Fajr, Sunrise comes next
   }
   header2 += `</tr>`;
@@ -171,7 +393,8 @@ async function render() {
   // Precompute weekly Iqamah times: for each week, use earliest Athan + offset (rounded), assign to all days in that week
   const iqamahTimesByPrayer = {};
   prayers.forEach(prayer => {
-    // Map: weekNum -> array of Athan times (in minutes)
+    // Restore weekly average Athan calculation for Iqamah
+    if (!window.weekAthanListGlobal) window.weekAthanListGlobal = {};
     const weekAthanList = {};
     timings.forEach((t, idx) => {
       const weekNum = getWeekNum(t.Date);
@@ -191,44 +414,47 @@ async function render() {
         weekAthanList[weekNum].push(athanMins);
       }
     });
+    window.weekAthanListGlobal[prayer] = weekAthanList;
     // Map: weekNum -> computed Iqamah time (string)
     const weekIqamah = {};
     Object.keys(weekAthanList).forEach(weekNum => {
       const athanArr = weekAthanList[weekNum];
       if (!athanArr || athanArr.length === 0) return;
-      // Average Athan for the week
-      let athanMins = Math.round(athanArr.reduce((a, b) => a + b, 0) / athanArr.length);
-      let minOffset = prayer === "Fajr" ? 15 : 10;
+      // Use the maximum (Athan + offset) for the week
       let selectedOffset = prayerOffsets[prayer] ?? defaultOffsets[prayer];
-      let finalOffset = selectedOffset;
-      let minIqamah = athanMins + finalOffset;
-      // Always round UP to the next 5-min mark for all prayers
-      let iqamahMins = minIqamah;
-      if (iqamahMins % 5 !== 0) {
-        iqamahMins += 5 - (iqamahMins % 5);
+      let maxAthanPlusOffset = Math.max(...athanArr.map(a => a + selectedOffset));
+      let iqamahMins = maxAthanPlusOffset;
+      // Tolerance-based rounding: only round up if next multiple of 5 is within positive tolerance, else round down
+      let mod = iqamahMins % 5;
+      if (mod !== 0) {
+        if (mod <= offsetToleranceNeg) {
+          iqamahMins -= mod; // round down
+        } else if ((5 - mod) <= offsetTolerancePos) {
+          iqamahMins += (5 - mod); // round up to next 5-min
+        } else {
+          iqamahMins -= mod; // round down if not within positive tolerance
+        }
       }
       weekIqamah[weekNum] = !isNaN(iqamahMins) ? formatTime(iqamahMins, true) : '';
     });
     iqamahTimesByPrayer[prayer] = timings.map((t, idx) => {
-      if (staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["all"] && staticIqamahOverrides[prayer]["all"].length > 0) {
+      // Fixed time override
+      if (staticIqamahOverrides[prayer] && staticIqamahOverrides[prayer]["useFixed"]) {
         let override = staticIqamahOverrides[prayer]["all"];
-        // If override is in h:mm format and prayer is not Fajr, treat as PM
-        if (!/AM|PM/i.test(override) && prayer !== "Fajr" && /^\d{1,2}:\d{2}$/.test(override.trim())) {
-          override = override.trim() + " PM";
+        // If override is empty or not set, fall back to offset method
+        if (!override || override.trim() === "") {
+          const weekNum = getWeekNum(t.Date);
+          return weekIqamah[weekNum] || '';
+        }
+        // Always require explicit AM/PM for all prayers
+        if (!/AM|PM/i.test(override)) {
+          if (prayer === "Fajr") override = override.trim() + " AM";
+          else override = override.trim() + " PM";
         }
         return override;
       } else {
         const weekNum = getWeekNum(t.Date);
-        let val = weekIqamah[weekNum] || '';
-        // Debug info for Fajr only
-        if (prayer === "Fajr" && val && typeof weekAthanList !== 'undefined') {
-          const athanArr = weekAthanList[weekNum] || [];
-          let avgAthan = athanArr.length ? Math.round(athanArr.reduce((a, b) => a + b, 0) / athanArr.length) : 0;
-          let selectedOffset = prayerOffsets[prayer] ?? defaultOffsets[prayer];
-          let iqamahMins = parseTime(val);
-          val += ` <span style='color:#888;font-size:smaller'>(avg: ${formatTime(avgAthan)}, offset: ${selectedOffset}, mins: ${iqamahMins})</span>`;
-        }
-        return val;
+        return weekIqamah[weekNum] || '';
       }
     });
   });
@@ -277,6 +503,8 @@ async function render() {
     const prevWeek = rowIdx > 0 ? getWeekNum(timings[rowIdx - 1].Date) : null;
     if (rowIdx === 0 || thisWeek !== prevWeek) {
       row.style.background = '#ffeeba';
+      row.style.boxShadow = '0 2px 8px 0 #e0c96a44';
+      row.style.borderTop = '3px solid #bfa52a';
     }
     // For each prayer, render Athan, Iqamah, Offset
     for (let i = 0; i < prayers.length; ++i) {
@@ -291,35 +519,54 @@ async function render() {
           break;
         }
       }
-      html += `<td>${athanTime}</td>`;
-      if (iqamahRowspans[prayer][rowIdx] > 0) {
-        html += `<td class='iqamah-col' rowspan='${iqamahRowspans[prayer][rowIdx]}'>${iqamahTimesByPrayer[prayer][rowIdx]}</td>`;
-      } else {
-        html += `<td class='iqamah-col' style='display:none'></td>`;
-      }
-      // Offset column (always present, never merged)
+      let selectedOffset = prayerOffsets[prayer] ?? defaultOffsets[prayer];
       let athanMins = parseTime(athanTime);
+      let rawIqamah = (!isNaN(athanMins)) ? athanMins + selectedOffset : null;
       let iqamahStr = iqamahTimesByPrayer[prayer][rowIdx];
       let iqamahMins = parseTime(iqamahStr);
-      let offsetVal = (!isNaN(athanMins) && !isNaN(iqamahMins) && athanTime && iqamahStr) ? (iqamahMins - athanMins) : null;
-      // Only show offset if it's a reasonable value (0–120 min)
-      if (offsetVal === null || offsetVal < 0 || offsetVal > 120) {
-        html += `<td style='color:#b00;font-weight:bold'>N/A</td>`;
-      } else if (offsetVal < (prayerOffsets[prayer] ?? defaultOffsets[prayer])) {
-        html += `<td style='color:#b00;font-weight:bold'>+${offsetVal} min ⚠️</td>`;
-      } else {
-        html += `<td>+${offsetVal} min</td>`;
+      let offsetVal = null;
+      if (!isNaN(athanMins) && !isNaN(iqamahMins)) {
+        offsetVal = iqamahMins - athanMins;
       }
-      // After Fajr, insert Sunrise column
-      if (i === 0) html += `<td>${t["Sunrise"] || ""}</td>`;
+      // Render columns in selected order
+      colOrder.forEach((col, j) => {
+        let tdStyle = '';
+        if (i === 0 && j === 0) tdStyle += 'border-left:2px solid #888;';
+        // Add thick right border only to the last column of the last prayer block
+        if (i === prayers.length - 1 && j === colOrder.length - 1) {
+          tdStyle += 'border-right:2px solid #888;';
+        } else {
+          tdStyle += 'border-right:1px solid #ccc;';
+        }
+        if (col === 'Athan') {
+          html += `<td style='${tdStyle}'>${athanTime}</td>`;
+        } else if (col === 'Raw') {
+          html += `<td style='${tdStyle}'>${rawIqamah !== null && !isNaN(rawIqamah) ? formatTime(Math.round(rawIqamah)) : ''}</td>`;
+        } else if (col === 'Offset') {
+          if (
+            athanTime === '' || iqamahStr === '' ||
+            isNaN(athanMins) || isNaN(iqamahMins) ||
+            offsetVal === null || isNaN(offsetVal) || offsetVal < 0 || offsetVal > 120
+          ) {
+            html += `<td style='color:#b00;font-weight:bold;${tdStyle}'>N/A</td>`;
+          } else {
+            html += `<td style='${tdStyle}'>+${offsetVal} min</td>`;
+          }
+        } else if (col === 'Iqama') {
+          if (iqamahRowspans[prayer][rowIdx] > 0) {
+            html += `<td class='iqamah-col' rowspan='${iqamahRowspans[prayer][rowIdx]}' style='${tdStyle}'>${iqamahTimesByPrayer[prayer][rowIdx]}</td>`;
+          } else {
+            html += `<td class='iqamah-col' style='display:none;${tdStyle}'></td>`;
+          }
+        }
+      });
+      // After Fajr's columns, insert Sunrise column (not a Raw Offset Time)
+      if (i === 0) html += `<td style='background:#f8f8f8;border-right:2px solid #888;'>${t["Sunrise"] || ""}</td>`;
     }
     row.innerHTML = html;
-    if (dayStr === "Sun") {
-      row.style.fontWeight = "bold";
-    }
+    // No bold for Sunday; highlight is enough
     if (dayStr === "Fri") {
-      row.style.fontWeight = "bold";
-      row.style.fontStyle = "italic";
+      row.style.background = '#d6eaff'; // Light blue highlight for Friday
     }
     table.appendChild(row);
   }
@@ -359,18 +606,25 @@ async function render() {
   tableContainer.style.margin = '0 auto';
   tableContainer.style.background = '#fff';
   tableContainer.appendChild(table);
-  app.appendChild(tableContainer);
-  // Add style for iqamah columns and center all table cells
-  const style = document.createElement('style');
-  style.textContent = `
-    #app { width: 100vw !important; max-width: 100vw !important; box-sizing: border-box; }
-    .iqamah-col { background: #e6ffe6; font-weight: bold; vertical-align: middle; }
-    table.table td, table.table th { text-align: center; vertical-align: middle; }
-    .table-container { width: 100%; max-width: 100vw; margin: 0 auto; overflow-x: auto; background: #fff; }
-    table.table { width: 100%; min-width: 1600px; margin: 0 auto; border-collapse: collapse; }
-    body { overflow-x: auto; }
-  `;
-  document.head.appendChild(style);
+    app.appendChild(tableContainer);
+    // Add style for iqamah columns and center all table cells
+    const style = document.createElement('style');
+    style.textContent = `
+      #app { width: 100vw !important; max-width: 100vw !important; box-sizing: border-box; }
+      .iqamah-col { background: #e6ffe6; font-weight: bold; vertical-align: middle; }
+      table.table td, table.table th { text-align: center; vertical-align: middle; }
+      .table-container { width: 100%; max-width: 100vw; margin: 0 auto; overflow-x: auto; background: #fff; }
+      table.table { width: 100%; min-width: 1600px; margin: 0 auto; border-collapse: collapse; }
+      body { overflow-x: auto; }
+    `;
+    document.head.appendChild(style);
+  } catch (err) {
+    if (app) {
+      app.innerHTML += `<div style='color:red; font-weight:bold;'>An error occurred: ${err.message}</div>`;
+    }
+    // Optionally log error to console
+    console.error('Render error:', err);
+  }
 }
 
 // Utility: Parse CSV
