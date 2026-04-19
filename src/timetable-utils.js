@@ -27,6 +27,11 @@ export function formatTime(minutes, ampm = true) {
   }
 }
 
+// Attach to window for global use
+if (typeof window !== 'undefined') {
+  window.formatTime = formatTime;
+}
+
 export function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
   const headers = lines[0].split(",").map(h => h.trim());
