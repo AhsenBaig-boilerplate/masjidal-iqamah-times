@@ -3,7 +3,12 @@ export function getWeekNum(dateStr, timings, weekStart) {
   let day = d.getDay();
   let weekStartIdx = {"Sunday":0, "Monday":1, "Saturday":6}[weekStart];
   const firstDate = new Date(timings[0].Date);
-  let diff = (d - firstDate) / (1000*60*60*24);
+  
+  // Calculate day difference using date components only (avoids DST issues)
+  const dUTC = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  const firstUTC = Date.UTC(firstDate.getFullYear(), firstDate.getMonth(), firstDate.getDate());
+  let diff = Math.round((dUTC - firstUTC) / (1000*60*60*24));
+  
   let firstDay = firstDate.getDay();
   let offset = (7 + day - weekStartIdx) % 7;
   let weekNum = Math.floor((diff - offset + (7 + firstDay - weekStartIdx) % 7) / 7);
