@@ -1,0 +1,38 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+      # Write the correct CNAME for prod environment
+      - name: Set CNAME for prod
+        run: echo "masjidal-iqamah-times.ahsenbaig.dev" > CNAME
+      # Removed npm ci and npm run build steps (not a Node.js project)
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://blog.example.com
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        # Removed cname for generic deployment
