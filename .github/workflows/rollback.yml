@@ -1,0 +1,25 @@
+name: Rollback Last Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Fetch tags
+        run: git fetch --tags
+      - name: Get last two tags
+        id: tags
+        run: |
+          tags=($(git tag --sort=-creatordate))
+          echo "last_tag=${tags[0]}" >> $GITHUB_OUTPUT
+          echo "prev_tag=${tags[1]}" >> $GITHUB_OUTPUT
+      - name: Revert to previous tag
+        run: |
+          git checkout ${{ steps.tags.outputs.prev_tag }}
+      - name: Redeploy previous artifact
+        run: |
+          echo "Redeploy logic goes here (customize for your stack)"

@@ -1,5 +1,5 @@
-# Require DevOps approval for workflow changes
-.github/workflows/*  @AhsenBaig
+# All files require review from @AhsenBaig
+* @AhsenBaig
 
-# Require engineering approval for all code changes
-*  @AhsenBaig
+# Workflows require review from @AhsenBaig
+/.github/workflows/* @AhsenBaig
