@@ -1,9 +1,6 @@
-<<<<<<< HEAD
-=======
-
 name: Deploy Dev
 
-          cname: dev.blog.example.com
+on:
   push:
     branches: [ dev ]
   workflow_dispatch:
@@ -13,7 +10,7 @@ permissions:
   pages: write
   id-token: write
 
-
+jobs:
   build:
     runs-on: ubuntu-latest
     env:
@@ -36,4 +33,3 @@ permissions:
     steps:
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
-        url: https://dev.masjidal-iqamah-times.ahsenbaig.dev
