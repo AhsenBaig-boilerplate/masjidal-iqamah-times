@@ -9,7 +9,11 @@
 <body>
   <div id="app"></div>
   <!-- Add versioning to app.js to prevent cache issues -->
-  <!-- Auto-version app.js with current timestamp for cache busting -->
-  <script type="module" src="src/app.js?v=<script>document.write(Date.now())</script>"></script>
+  <script>
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = 'src/app.js?v=' + Date.now();
+    document.body.appendChild(script);
+  </script>
 </body>
 </html>
