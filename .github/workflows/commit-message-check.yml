@@ -13,6 +13,8 @@ permissions:
 jobs:
   commit-message-check:
     runs-on: ubuntu-latest
+    # Dependabot generates its own commit format; skip validation for its PRs
+    if: github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -28,10 +30,11 @@ jobs:
         run: |
           regex='^(feat|fix|chore|docs|style|refactor|perf|test|ci|build|revert)(\(.+\))?: .+'
           failed=0
+          # Only check the subject line (first line) of each commit message
           while IFS= read -r msg; do
             if ! echo "$msg" | grep -qE "$regex"; then
               echo "::error::Commit message does not follow Conventional Commits: '$msg'"
               failed=1
             fi
-          done < <(echo "$COMMITS_JSON" | jq -r '.[].commit.message')
+          done < <(echo "$COMMITS_JSON" | jq -r '.[].commit.message | split("\n")[0]')
           exit $failed
