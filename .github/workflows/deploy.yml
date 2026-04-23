@@ -1,0 +1,64 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main, dev ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Build staging directory
+        run: |
+          mkdir -p staging staging/dev
+
+          # main branch → root
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='staging' \
+            . staging/
+
+          # dev branch → /dev/
+          git fetch origin dev
+          git worktree add /tmp/dev-worktree origin/dev
+          rsync -av \
+            --exclude='.git' \
+            --exclude='.github' \
+            /tmp/dev-worktree/ staging/dev/
+
+          # CNAME for prod custom domain only
+          echo "masjidal-iqamah-times.ahsenbaig.dev" > staging/CNAME
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: staging
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://masjidal-iqamah-times.ahsenbaig.dev
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
