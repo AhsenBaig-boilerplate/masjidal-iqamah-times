@@ -1,0 +1,81 @@
+name: Release Promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type (patch, minor, major)'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          bump_type="${{ github.event.inputs.bump }}"
+          version_file="VERSION"
+          if [ ! -f "$version_file" ]; then echo "0.0.0" > "$version_file"; fi
+          old_version=$(cat "$version_file")
+          IFS='.' read -r major minor patch <<< "$old_version"
+          case "$bump_type" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+          esac
+          new_version="$major.$minor.$patch"
+          echo "$new_version" > "$version_file"
+          echo "new_version=$new_version" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        run: |
+          git fetch --tags
+          last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -n "$last_tag" ]; then
+            git log "$last_tag"..HEAD --pretty=format:'- %s' > CHANGELOG.md
+          else
+            git log --pretty=format:'- %s' > CHANGELOG.md
+          fi
+
+      - name: Create release branch and push
+        id: branch
+        run: |
+          branch_name="release/${{ steps.bump.outputs.new_version }}"
+          git checkout -b "$branch_name"
+          git add VERSION CHANGELOG.md
+          git commit -m "chore(release): v${{ steps.bump.outputs.new_version }}"
+          git push origin "$branch_name"
+          echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
+
+      - name: Open PR to main
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: "chore(release): v${{ steps.bump.outputs.new_version }}"
+          body: |
+            Automated release PR for **v${{ steps.bump.outputs.new_version }}**.
+
+            Merge this PR to publish the release. A git tag will be created on merge.
+          base: main
+          branch: ${{ steps.branch.outputs.branch_name }}
+          labels: release

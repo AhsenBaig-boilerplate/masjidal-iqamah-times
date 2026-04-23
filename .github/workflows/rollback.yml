@@ -1,0 +1,45 @@
+name: Rollback Last Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Resolve previous release tag
+        id: tags
+        run: |
+          mapfile -t tags < <(git tag --sort=-creatordate)
+          if [ ${#tags[@]} -lt 2 ]; then
+            echo "::error::At least two release tags are required to perform a rollback."
+            exit 1
+          fi
+          echo "current=${tags[0]}" >> $GITHUB_OUTPUT
+          echo "previous=${tags[1]}" >> $GITHUB_OUTPUT
+          echo "Rolling back from ${tags[0]} to ${tags[1]}"
+
+      - name: Revert main to previous release
+        run: |
+          prev="${{ steps.tags.outputs.previous }}"
+          git checkout main
+          git checkout "$prev" -- .
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::No file changes between current and $prev — nothing to commit."
+          else
+            git commit -m "revert: rollback to $prev"
+            git push origin main
+          fi

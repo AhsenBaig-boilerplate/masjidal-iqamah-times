@@ -1,0 +1,66 @@
+name: "🔄 Sync main → dev/feature"
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: "🔄 Merge main into dev and feature branches"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "🔧 Configure git"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: "🔄 Sync branches"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Collect all remote dev and feature/* branches
+          branches=$(git branch -r \
+            | grep -E 'origin/(dev$|feature/)' \
+            | sed 's|[[:space:]]*origin/||' \
+            | sort -u)
+
+          if [ -z "$branches" ]; then
+            echo "No dev/feature branches found — nothing to sync."
+            exit 0
+          fi
+
+          for branch in $branches; do
+            echo "--- Syncing $branch ---"
+
+            git checkout -B "$branch" "origin/$branch"
+
+            if git merge --no-edit origin/main; then
+              git push origin "$branch"
+              echo "✅ Merged main into $branch"
+            else
+              git merge --abort
+
+              # Create a PR so the developer resolves the conflict manually
+              if ! gh pr list --base "$branch" --head main --state open | grep -q .; then
+                gh pr create \
+                  --base "$branch" \
+                  --head main \
+                  --title "chore: sync main into $branch" \
+                  --body "Automated sync from \`main\` — merge conflict detected, manual resolution required."
+                echo "📬 Opened PR: main → $branch"
+              else
+                echo "⏭️  PR already open for $branch — skipping"
+              fi
+            fi
+          done
