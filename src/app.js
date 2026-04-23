@@ -77,13 +77,18 @@ let offsetToleranceNeg = Number(localStorage.getItem("offsetToleranceNeg") || 2)
 let offsetTolerancePos = Number(localStorage.getItem("offsetTolerancePos") || 3);
 let staticIqamahOverrides = JSON.parse(localStorage.getItem("staticIqamahOverrides") || "null") || {};
 
-// Load CSV data from localStorage if present
 let csvData = null;
-const uploadedCSV = localStorage.getItem("uploadedCSV");
-if (uploadedCSV) {
-  try { csvData = parseCSV(uploadedCSV); } catch {}
-}
 
+async function loadInitialCSV() {
+  const stored = localStorage.getItem("uploadedCSV");
+  if (stored) {
+    try { csvData = parseCSV(stored); return; } catch {}
+  }
+  try {
+    const res = await fetch('salah_timings.csv');
+    if (res.ok) csvData = parseCSV(await res.text());
+  } catch {}
+}
 
 async function render() {
   const app = document.getElementById("app");
@@ -173,4 +178,4 @@ async function render() {
   }
 }
 
-render();
+loadInitialCSV().then(() => render());
