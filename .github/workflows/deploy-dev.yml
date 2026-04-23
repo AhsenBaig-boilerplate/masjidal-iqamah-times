@@ -1,0 +1,40 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches: [ dev ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Example: adjust to your stack
+      - name: Install deps
+        run: npm ci
+
+      - name: Build (dev)
+        run: npm run build:dev
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://dev.blog.example.com
+    steps:
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        with:
+          cname: dev.blog.example.com
