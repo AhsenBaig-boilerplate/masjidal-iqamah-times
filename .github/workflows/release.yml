@@ -1,0 +1,66 @@
+name: Create Release PR (dev → main)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "semver: patch | minor | major"
+        required: true
+        default: patch
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: version
+        run: |
+          CURRENT=$(git tag --sort=-v:refname | head -n1 || echo "v0.0.0")
+          TYPE="${{ github.event.inputs.release_type }}"
+          npx semver $CURRENT -i $TYPE > .next_version
+          echo "value=$(cat .next_version)" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | head -n1 || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            git log --oneline > CHANGELOG_PENDING.md
+          else
+            git log --oneline "$PREV_TAG"..dev > CHANGELOG_PENDING.md
+          fi
+          echo "file=CHANGELOG_PENDING.md" >> "$GITHUB_OUTPUT"
+
+      - name: Create release branch
+        run: |
+          git checkout dev
+          git checkout -b release/${{ steps.version.outputs.value }}
+
+      - name: Commit version + changelog
+        run: |
+          echo "${{ steps.version.outputs.value }}" > VERSION
+          mv CHANGELOG_PENDING.md CHANGELOG.md
+          git add VERSION CHANGELOG.md
+          git commit -m "chore: release ${{ steps.version.outputs.value }}"
+          git push origin HEAD
+
+      - name: Open PR dev → main
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          base: main
+          head: release/${{ steps.version.outputs.value }}
+          title: "Release ${{ steps.version.outputs.value }}"
+          body: |
+            Release ${{ steps.version.outputs.value }}
+
+            Changes:
+            - See CHANGELOG.md
