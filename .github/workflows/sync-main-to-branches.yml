@@ -6,12 +6,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 
 jobs:
   sync:
-    name: "🔄 Merge main into dev and feature branches"
+    name: "🔄 Open sync PRs for dev/feature branches"
     runs-on: ubuntu-latest
     steps:
       - name: "📥 Checkout"
@@ -20,16 +20,10 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: "🔧 Configure git"
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
       - name: "🔄 Sync branches"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Collect all remote dev and feature/* branches
           branches=$(git branch -r \
             | grep -E 'origin/(dev$|feature/)' \
             | sed 's|[[:space:]]*origin/||' \
@@ -41,26 +35,24 @@ jobs:
           fi
 
           for branch in $branches; do
-            echo "--- Syncing $branch ---"
+            echo "--- Checking $branch ---"
 
-            git checkout -B "$branch" "origin/$branch"
-
-            if git merge --no-edit origin/main; then
-              git push origin "$branch"
-              echo "✅ Merged main into $branch"
-            else
-              git merge --abort
-
-              # Create a PR so the developer resolves the conflict manually
-              if ! gh pr list --base "$branch" --head main --state open | grep -q .; then
-                gh pr create \
-                  --base "$branch" \
-                  --head main \
-                  --title "chore: sync main into $branch" \
-                  --body "Automated sync from \`main\` — merge conflict detected, manual resolution required."
-                echo "📬 Opened PR: main → $branch"
-              else
-                echo "⏭️  PR already open for $branch — skipping"
-              fi
+            # Nothing to do if main is already fully contained in the branch
+            if git merge-base --is-ancestor origin/main "origin/$branch"; then
+              echo "✅ $branch already up to date with main"
+              continue
             fi
+
+            # Skip if a sync PR is already open
+            if gh pr list --base "$branch" --head main --state open | grep -q .; then
+              echo "⏭️  Sync PR already open for $branch — skipping"
+              continue
+            fi
+
+            gh pr create \
+              --base "$branch" \
+              --head main \
+              --title "chore: sync main into $branch" \
+              --body "Automated sync from \`main\`. Review and merge to keep this branch up to date. If there are conflicts, resolve them in the PR."
+            echo "📬 Opened PR: main → $branch"
           done
