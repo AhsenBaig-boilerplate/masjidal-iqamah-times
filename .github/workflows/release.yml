@@ -21,7 +21,7 @@ jobs:
   promote-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -68,7 +68,7 @@ jobs:
           echo "branch_name=$branch_name" >> $GITHUB_OUTPUT
 
       - name: Open PR to main
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           title: "chore(release): v${{ steps.bump.outputs.new_version }}"
@@ -77,5 +77,5 @@ jobs:
 
             Merge this PR to publish the release. A git tag will be created on merge.
           base: main
-          head: ${{ steps.branch.outputs.branch_name }}
+          branch: ${{ steps.branch.outputs.branch_name }}
           labels: release

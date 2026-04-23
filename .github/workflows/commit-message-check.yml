@@ -14,11 +14,11 @@ jobs:
   commit-message-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Get PR commits
         id: commits
-        uses: tim-actions/get-pr-commits@v1.3.0
+        uses: tim-actions/get-pr-commits@3efc1387ead42029a0d488ab98f24b7452dc3cde # v1.3.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
