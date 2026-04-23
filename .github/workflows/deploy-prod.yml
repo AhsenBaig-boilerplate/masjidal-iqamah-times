@@ -10,17 +10,12 @@ permissions:
   id-token: write
 
 jobs:
+
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install deps
-        run: npm ci
-
-      - name: Build (prod)
-        run: npm run build
-
+      # Removed npm ci and npm run build steps (not a Node.js project)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

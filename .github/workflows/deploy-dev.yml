@@ -10,18 +10,12 @@ permissions:
   id-token: write
 
 jobs:
+
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # Example: adjust to your stack
-      - name: Install deps
-        run: npm ci
-
-      - name: Build (dev)
-        run: npm run build:dev
-
+      # Removed npm ci and npm run build:dev steps (not a Node.js project)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
