@@ -1,6 +1,11 @@
+on:
+jobs:
 name: Deploy Dev
 
-on:
+  build:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    runs-on: ubuntu-latest
   push:
     branches: [ dev ]
   workflow_dispatch:
@@ -10,9 +15,6 @@ permissions:
   pages: write
   id-token: write
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
