@@ -19,6 +19,9 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
+      # Write the correct CNAME for dev environment
+      - name: Set CNAME for dev
+        run: echo "dev.masjidal-iqamah-times.ahsenbaig.dev" > CNAME
       # Removed npm ci and npm run build:dev steps (not a Node.js project)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
