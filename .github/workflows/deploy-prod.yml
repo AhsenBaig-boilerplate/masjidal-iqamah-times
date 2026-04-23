@@ -13,8 +13,20 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+<<<<<<< HEAD
     steps:
       - uses: actions/checkout@v4
+=======
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+      # Write the correct CNAME for prod environment
+      - name: Set CNAME for prod
+        run: echo "masjidal-iqamah-times.ahsenbaig.dev" > CNAME
+>>>>>>> dev
       # Removed npm ci and npm run build steps (not a Node.js project)
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
