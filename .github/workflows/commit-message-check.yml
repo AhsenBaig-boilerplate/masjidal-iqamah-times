@@ -30,11 +30,11 @@ jobs:
         run: |
           regex='^(feat|fix|chore|docs|style|refactor|perf|test|ci|build|revert)(\(.+\))?: .+'
           failed=0
-          # Only check the subject line (first line) of each commit message
+          # Skip merge commits (2+ parents); only check the subject line of regular commits
           while IFS= read -r msg; do
             if ! echo "$msg" | grep -qE "$regex"; then
               echo "::error::Commit message does not follow Conventional Commits: '$msg'"
               failed=1
             fi
-          done < <(echo "$COMMITS_JSON" | jq -r '.[].commit.message | split("\n")[0]')
+          done < <(echo "$COMMITS_JSON" | jq -r '[.[] | select((.parents | length) < 2)] | .[].commit.message | split("\n")[0]')
           exit $failed
