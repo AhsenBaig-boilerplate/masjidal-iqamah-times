@@ -1,20 +1,26 @@
-name: Enforce Commit Message Format
+name: Commit Message Check
 
 on:
   pull_request:
-    branches: [ main, dev ]
+    branches:
+      - dev
+      - main
 
 jobs:
-  check-commit-message:
+  commit-message-check:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Get PR commits
+        id: commits
+        uses: tim-actions/get-pr-commits@v1.3.0
       - name: Check commit messages
         run: |
-          regex="^(feat|fix|chore|docs|style|refactor|perf|test|ci|build|revert)(\(.+\))?: .+"
-          for commit in $(git log --format=%s origin/${{ github.base_ref }}..HEAD); do
-            if ! [[ $commit =~ $regex ]]; then
-              echo "❌ Commit message does not follow Conventional Commits:"
-              echo "   $commit"
+          regex='^(feat|fix|chore|docs|style|refactor|perf|test|ci|build|revert)(\(.+\))?: .+'
+          for msg in $(echo "${{ steps.commits.outputs.commits }}" | jq -r '.[].commit.message'); do
+            if ! [[ $msg =~ $regex ]]; then
+              echo "Commit message '$msg' does not follow Conventional Commits!"
               exit 1
             fi
           done
