@@ -1,0 +1,20 @@
+name: Enforce Commit Message Format
+
+on:
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  check-commit-message:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check commit messages
+        run: |
+          regex="^(feat|fix|chore|docs|style|refactor|perf|test|ci|build|revert)(\(.+\))?: .+"
+          for commit in $(git log --format=%s origin/${{ github.base_ref }}..HEAD); do
+            if ! [[ $commit =~ $regex ]]; then
+              echo "❌ Commit message does not follow Conventional Commits:"
+              echo "   $commit"
+              exit 1
+            fi
+          done
