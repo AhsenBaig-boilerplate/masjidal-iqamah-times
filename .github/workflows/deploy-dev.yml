@@ -1,11 +1,6 @@
-on:
-jobs:
 name: Deploy Dev
 
-  build:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-    runs-on: ubuntu-latest
+on:
   push:
     branches: [ dev ]
   workflow_dispatch:
@@ -15,8 +10,12 @@ permissions:
   pages: write
   id-token: write
 
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Set CNAME for dev
