@@ -1,3 +1,6 @@
+# Branch flow: feature/* → dev → main (one direction only, no auto-sync back)
+# main deploys to /  (production, self-contained)
+# dev   deploys to /dev/ (staging, modular ES module rewrite)
 name: Deploy
 
 on:
