@@ -7,7 +7,10 @@
   <!-- Tailwind CSS via CDN for rapid prototyping -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="./style.css?v=20260418-57">
-  <!-- Masjidal timetable widget -->
+  <!-- Masjidal timetable widget (fonts must load at page level; its shadow DOM can't load them itself) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Lato:wght@400;700&family=Amiri:wght@400;700&display=swap">
   <script async src="https://widgets.masjidal.com/timetable/v0/widget.js"></script>
 </head>
 <body class="bg-gray-50 text-gray-900 min-h-screen">
